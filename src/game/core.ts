@@ -23,10 +23,36 @@ export class DynablasterGame {
 export class GameState {
     public level: Level;
     public dyna: Dyna;
+    public enemies: Enemy[];
 
     constructor() {
-        this.level = this.generateLevel(12, 12);
+        this.level = this.generateLevel(7, 9);
         this.dyna = this.generateDyna(0, 4);
+        this.enemies = this.generateEnemies(5);
+    }
+    
+    private generateEnemies(amount: number) {
+        const enemies: Enemy[] = [];
+        for (let i=0; i<amount; i++) {
+            let enemy = this.generateEnemy();
+            if (samePosition(enemy.position, this.dyna.position)) {
+                enemy = this.generateEnemy();
+            }
+            if (!samePosition(enemy.position, this.dyna.position)) {
+                enemies.push(enemy);
+            }
+        }
+
+        return enemies;
+    }
+
+    private generateEnemy(): Enemy {
+        const enemy = new Enemy(this, {
+            row: Math.floor(Math.random() * this.level.dimensions.rows),
+            column: Math.floor(Math.random() * this.level.dimensions.columns)
+        }, 800);
+
+        return enemy;
     }
 
     private generateLevel(rows: number, columns: number): Level {
@@ -58,6 +84,7 @@ export class GameState {
 
     private generateDyna(row: number, column: number): Dyna {
         return {
+            alive: true,
             position: {
                 row,
                 column
@@ -99,7 +126,45 @@ function withinBounds(pos: Position, dimensions: LevelDimensions) {
 }
 
 interface Dyna {
+    alive: boolean;
     position: Position;
+}
+
+class Enemy {
+    private lastMove: number = 0;
+    private static readonly possibleMoves: DeltaPosition[] = [{drow:-1, dcolumn:0}, {drow:1,dcolumn:0}, {drow:0, dcolumn:-1}, {drow:0, dcolumn:1}];
+
+    constructor(private state: GameState, public position: Position, public speed: number) {}
+
+    public run() {
+        const now = performance.now();
+        if (now - this.lastMove > this.speed) {
+            this.lastMove = now;
+            this.move();
+        }
+    }
+
+    private move() {
+        const choice = Math.floor(Math.random() * Enemy.possibleMoves.length);
+        const delta = Enemy.possibleMoves[choice];
+        
+        let newPosition = Object.assign({}, this.position);        
+        newPosition.row += delta.drow;
+        newPosition.column += delta.dcolumn;
+
+        if (!withinBounds(newPosition, this.state.level.dimensions)) {            
+            newPosition = Object.assign({}, this.position);
+            newPosition.row -= delta.drow;
+            newPosition.column -= delta.dcolumn;
+        }
+
+        this.position = newPosition;
+    }
+}
+
+interface DeltaPosition {
+    drow: number;
+    dcolumn: number;
 }
 
 interface Cell {
@@ -108,17 +173,26 @@ interface Cell {
 
 class GameLogic {
     private keydownHandler?: (this: Window, ev: KeyboardEvent) => any;
+    private thread?: NodeJS.Timer;
 
     constructor(private state: GameState) {}
 
     public init() {
         this.keydownHandler = this.handleKeyDownFactory();
         window.addEventListener("keydown", this.keydownHandler);
+
+        this.thread = setInterval(() => {
+            this.runEnemies();
+            this.checkState();
+        }, 1000/200);
     }
 
     public destroy() {
         if (this.keydownHandler) {
             window.removeEventListener("keydown", this.keydownHandler);
+        }
+        if (this.thread) {
+            clearInterval(this.thread);
         }
     }
 
@@ -143,12 +217,28 @@ class GameLogic {
     }
 
     private move(drow: number, dcolumn: number) {
+        if (!this.state.dyna.alive) return;
+
         let newPosition = Object.assign({}, this.state.dyna.position);
         newPosition.row += drow;
         newPosition.column += dcolumn;
 
         if (withinBounds(newPosition, this.state.level.dimensions)) {
             this.state.dyna.position = newPosition;
+        }
+    }
+
+    private runEnemies() {
+        for (let enemy of this.state.enemies) {
+            enemy.run();
+        }
+    }
+
+    private checkState() {
+        for (let enemy of this.state.enemies) {
+            if (samePosition(enemy.position, this.state.dyna.position)) {
+                this.state.dyna.alive = false;
+            }
         }
     }
 }
@@ -192,7 +282,6 @@ class Render {
         const dynaCell = this.state.level.rows[dynaPosition.row].columns[dynaPosition.column].cell;
         const topLeft = this.state.level.rows[0].columns[0].cell;
         const bottomRight = this.state.level.rows[this.state.level.dimensions.rows-1].columns[this.state.level.dimensions.columns-1].cell;
-
 
         const zeroOffset = { x: 0, y: 0};
         const dynaZeroDimensions = new CellDimensions(this.renderSettings, zeroOffset, dynaCell);
@@ -310,10 +399,18 @@ class CellContent {
     backgroundColor: string;
 
     constructor(private state: GameState, private cell: Cell) {
-        this.text = `(${cell.position.row}, ${cell.position.column})`;
-
+        this.text = "";
         if (samePosition(state.dyna.position, cell.position)) {
-            this.text += "*";
+            if (state.dyna.alive)
+                this.text = "D";
+            else
+                this.text = "X_X";
+        }
+
+        for (let enemy of state.enemies) {
+            if (samePosition(enemy.position, cell.position)) {
+                this.text = ":O";
+            }
         }
 
         const percWidth = cell.position.column / state.level.dimensions.columns;
