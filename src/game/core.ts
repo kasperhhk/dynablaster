@@ -4,7 +4,7 @@ export class DynablasterGame {
 
     constructor(private canvas: HTMLCanvasElement, private context: CanvasRenderingContext2D, private settings: GameSettings) {
         this.state = new GameState();
-        this.renderer = new GameRenderer(this.state, canvas, context, settings);
+        this.renderer = new GameRenderer(this.state, context, settings);
     }
 
     public init() {
@@ -17,12 +17,16 @@ export class GameState {
     public dyna: Dyna;
 
     constructor() {
-        this.level = this.generateLevel(10, 10);
-        this.dyna = this.generateDyna(7, 0);
+        this.level = this.generateLevel(12, 12);
+        this.dyna = this.generateDyna(7, 10);
     }
 
     private generateLevel(rows: number, columns: number): Level {
         const level: Level = {
+            dimensions: {
+                rows,
+                columns
+            },
             rows: []
         };
         for (let r=0; r<rows; r++) {
@@ -55,7 +59,13 @@ export class GameState {
 }
 
 interface Level {
+    dimensions: LevelDimensions;
     rows: Row[];
+}
+
+interface LevelDimensions {
+    rows: number;
+    columns: number;
 }
 
 interface Row {
@@ -87,60 +97,126 @@ interface Cell {
 class GameRenderer {
     private thread?: NodeJS.Timer;
 
-    private readonly pixelWidth: number;
-    private readonly pixelHeight: number;
+    private readonly renderSettings: RenderSettings;
 
-    private readonly pixelRatio = 10;
-
-    constructor(private state: GameState, private canvas: HTMLCanvasElement, private context: CanvasRenderingContext2D, private settings: GameSettings) {
-        this.pixelWidth = this.settings.dimensions.width;
-        this.pixelHeight = this.settings.dimensions.height;
+    constructor(private state: GameState, private context: CanvasRenderingContext2D, private settings: GameSettings) {
+        this.renderSettings = {
+            pixelRatio: 10,
+            pixelWidth: this.settings.dimensions.width,
+            pixelHeight: this.settings.dimensions.height
+        }
     }
 
     public init() {
         this.thread = setInterval(() => {
-            //const offset = this.calculateOffset();
-            this.renderGrid();
+            const render = new Render(this.context, this.renderSettings, this.state);
+            render.render();
         }, 1000/(this.settings.graphics?.fps || 60));
+    }
+}
+
+class Render {
+    private offset: PixelOffset;
+
+    constructor(private context: CanvasRenderingContext2D, private renderSettings: RenderSettings, private state: GameState) {
+        this.offset = this.calculateOffset();
+    }
+
+    private calculateOffset(): PixelOffset {
+        const dynaPosition = this.state.dyna.position;
+        const dynaCell = this.state.level.rows[dynaPosition.row].columns[dynaPosition.column].cell;
+        const noOffset = { x: 0, y: 0};
+        const dimensions = new CellDimensions(this.renderSettings, noOffset, dynaCell);
+
+        const offset = { 
+            x: dimensions.right > this.renderSettings.pixelWidth ? this.renderSettings.pixelWidth - dimensions.right : 0,
+            y: dimensions.bottom > this.renderSettings.pixelHeight ? this.renderSettings.pixelHeight - dimensions.bottom : 0
+        };
+
+        return offset;
+    }
+
+    render() {
+        this.renderGrid();
     }
 
     private renderGrid() {
         for (let row of this.state.level.rows) {
             for (let columns of row.columns) {
                 const content = new CellContent(this.state, columns.cell);
-                this.renderCell(new RenderCell(this.pixelWidth, this.pixelRatio, columns.cell, content));
+                const dimensions = new CellDimensions(this.renderSettings, this.offset, columns.cell);
+                this.renderCell(dimensions, content);
             }
         }
     }
 
-    private renderCell(cell: RenderCell) {
-        this.context.lineWidth = 1;
-        this.context.strokeRect(cell.topLeft.x, cell.topLeft.y, cell.width, cell.height);
+    private renderCell(dimensions: CellDimensions, content: CellContent) {
+        this.context.fillStyle = content.backgroundColor;
+        this.context.fillRect(dimensions.topLeft.x, dimensions.topLeft.y, dimensions.width, dimensions.height);
 
+        this.context.strokeStyle = "black";
+        this.context.lineWidth = 1;
+        this.context.strokeRect(dimensions.topLeft.x, dimensions.topLeft.y, dimensions.width, dimensions.height);
+
+        this.context.fillStyle = content.textColor;
         this.context.textAlign = 'center';
         this.context.textBaseline = 'middle';
         this.context.font = "15px serif";
-        this.context.fillText(cell.content.text, cell.topLeft.x + (cell.width/2), cell.topLeft.y + (cell.height/2));
+        this.context.fillText(content.text, dimensions.topLeft.x + (dimensions.width/2), dimensions.topLeft.y + (dimensions.height/2));
     }
 }
 
-class RenderCell {
+interface RenderSettings {
+    pixelRatio: number;
+    pixelWidth: number;
+    pixelHeight: number;
+}
+
+class CellDimensions {
     topLeft: PixelPosition;
     width: number;
     height: number;
+    
+    bottomLeft: PixelPosition;
+    bottomRight: PixelPosition;
+    topRight: PixelPosition;
 
-    constructor(canvasWidth: number, pixelRatio: number, private cell: Cell, public content: CellContent) {
-        this.width = canvasWidth / pixelRatio;
+    right: number;
+    left: number;
+    top: number;
+    bottom: number;
+
+    constructor(private renderSettings: RenderSettings, private offset: PixelOffset, private cell: Cell) {
+        this.width = this.renderSettings.pixelWidth / this.renderSettings.pixelRatio;
         this.height = this.width;
         this.topLeft = {
-            x: cell.position.column * this.width,
-            y: cell.position.row * this.height
+            x: cell.position.column * this.width + this.offset.x,
+            y: cell.position.row * this.height + this.offset.y
         };
+        this.bottomLeft = {
+            x: this.topLeft.x,
+            y: this.topLeft.y + this.height
+        };
+        this.bottomRight = {
+            x: this.topLeft.x + this.width,
+            y: this.topLeft.y + this.height
+        };
+        this.topRight = {
+            x: this.topLeft.x + this.width,
+            y: this.topLeft.y
+        };
+
+        this.right = this.topRight.x;
+        this.left = this.topLeft.x;
+        this.top = this.topLeft.y;
+        this.bottom = this.bottomLeft.y;
     }
 }
 
 class CellContent {
     text: string;
+    textColor: string;
+    backgroundColor: string;
 
     constructor(private state: GameState, private cell: Cell) {
         this.text = `(${cell.position.row}, ${cell.position.column})`;
@@ -148,10 +224,26 @@ class CellContent {
         if (samePosition(state.dyna.position, cell.position)) {
             this.text += "*";
         }
+
+        const percWidth = cell.position.column / state.level.dimensions.columns;
+        const percHeight = cell.position.row / state.level.dimensions.rows;
+
+        const red = percWidth * 255;
+        const green = percHeight * 255;
+        const blue = 150;
+
+        this.textColor = "white";
+        
+        this.backgroundColor = `rgb(${red}, ${green}, ${blue})`;
     }
 }
 
 interface PixelPosition {
+    x: number;
+    y: number;
+}
+
+interface PixelOffset {
     x: number;
     y: number;
 }
