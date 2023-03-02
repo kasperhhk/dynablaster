@@ -112,7 +112,6 @@ class GameLogic {
     constructor(private state: GameState) {}
 
     public init() {
-        console.log("init logic");
         this.keydownHandler = this.handleKeyDownFactory();
         window.addEventListener("keydown", this.keydownHandler);
     }
@@ -161,7 +160,7 @@ class GameRenderer {
 
     constructor(private state: GameState, private context: CanvasRenderingContext2D, private settings: GameSettings) {
         this.renderSettings = {
-            pixelRatio: 10,
+            pixelRatio: 9,
             pixelWidth: this.settings.dimensions.width,
             pixelHeight: this.settings.dimensions.height
         }
