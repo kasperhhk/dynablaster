@@ -1,14 +1,22 @@
 export class DynablasterGame {
     private state: GameState;
     private renderer: GameRenderer;
+    private logic: GameLogic;
 
     constructor(private canvas: HTMLCanvasElement, private context: CanvasRenderingContext2D, private settings: GameSettings) {
         this.state = new GameState();
         this.renderer = new GameRenderer(this.state, context, settings);
+        this.logic = new GameLogic(this.state);
     }
 
     public init() {
         this.renderer.init();
+        this.logic.init();
+    }
+
+    public destroy() {
+        this.renderer.destroy();
+        this.logic.destroy();
     }
 }
 
@@ -86,12 +94,64 @@ function samePosition(a?: Position, b?: Position) {
     return a.row == b.row && a.column == b.column;
 }
 
+function withinBounds(pos: Position, dimensions: LevelDimensions) {
+    return pos.row >= 0 && pos.row < dimensions.rows && pos.column >= 0 && pos.column < dimensions.columns;
+}
+
 interface Dyna {
     position: Position;
 }
 
 interface Cell {
     position: Position;
+}
+
+class GameLogic {
+    private keydownHandler?: (this: Window, ev: KeyboardEvent) => any;
+
+    constructor(private state: GameState) {}
+
+    public init() {
+        console.log("init logic");
+        this.keydownHandler = this.handleKeyDownFactory();
+        window.addEventListener("keydown", this.keydownHandler);
+    }
+
+    public destroy() {
+        if (this.keydownHandler) {
+            window.removeEventListener("keydown", this.keydownHandler);
+        }
+    }
+
+    private handleKeyDownFactory(): (this: Window, ev: KeyboardEvent) => any {
+        const self = this;
+        return (ev) => {
+            if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+
+            if (ev.key == "ArrowDown") {
+                self.move(1, 0);
+            }
+            else if (ev.key == "ArrowUp") {
+                self.move(-1, 0);
+            }
+            else if (ev.key == "ArrowLeft") {
+                self.move(0, -1);
+            }
+            else if (ev.key == "ArrowRight") {
+                self.move(0, 1);
+            }
+        };
+    }
+
+    private move(drow: number, dcolumn: number) {
+        let newPosition = Object.assign({}, this.state.dyna.position);
+        newPosition.row += drow;
+        newPosition.column += dcolumn;
+
+        if (withinBounds(newPosition, this.state.level.dimensions)) {
+            this.state.dyna.position = newPosition;
+        }
+    }
 }
 
 class GameRenderer {
@@ -112,6 +172,10 @@ class GameRenderer {
             const render = new Render(this.context, this.renderSettings, this.state);
             render.render();
         }, 1000/(this.settings.graphics?.fps || 60));
+    }
+
+    public destroy() {
+        clearInterval(this.thread);
     }
 }
 

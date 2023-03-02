@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { DynablasterGame } from '../../game/core';
 
 @Component({
@@ -6,7 +6,7 @@ import { DynablasterGame } from '../../game/core';
   templateUrl: './gamepage.component.html',
   styleUrls: ['./gamepage.component.scss']
 })
-export class GamepageComponent implements OnInit, AfterViewInit {
+export class GamepageComponent implements OnInit, AfterViewInit, OnDestroy {
 
     @ViewChild("game")
     canvas?: ElementRef<HTMLCanvasElement>;
@@ -18,6 +18,12 @@ export class GamepageComponent implements OnInit, AfterViewInit {
     constructor() { }
 
     ngOnInit(): void {
+    }
+
+    ngOnDestroy(): void {
+        if (this.game) {
+            this.game.destroy();
+        }
     }
 
     ngAfterViewInit(): void {
