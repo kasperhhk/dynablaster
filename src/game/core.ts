@@ -26,7 +26,7 @@ export class GameState {
 
     constructor() {
         this.level = this.generateLevel(12, 12);
-        this.dyna = this.generateDyna(7, 10);
+        this.dyna = this.generateDyna(0, 4);
     }
 
     private generateLevel(rows: number, columns: number): Level {
@@ -160,9 +160,11 @@ class GameRenderer {
 
     constructor(private state: GameState, private context: CanvasRenderingContext2D, private settings: GameSettings) {
         this.renderSettings = {
-            pixelRatio: 9,
-            pixelWidth: this.settings.dimensions.width,
-            pixelHeight: this.settings.dimensions.height
+            viewPort: {
+                cellsPerWidth: 9,
+                pixelWidth: this.settings.dimensions.width,
+                pixelHeight: this.settings.dimensions.height
+            }            
         }
     }
 
@@ -188,18 +190,40 @@ class Render {
     private calculateOffset(): PixelOffset {
         const dynaPosition = this.state.dyna.position;
         const dynaCell = this.state.level.rows[dynaPosition.row].columns[dynaPosition.column].cell;
-        const noOffset = { x: 0, y: 0};
-        const dimensions = new CellDimensions(this.renderSettings, noOffset, dynaCell);
+        const topLeft = this.state.level.rows[0].columns[0].cell;
+        const bottomRight = this.state.level.rows[this.state.level.dimensions.rows-1].columns[this.state.level.dimensions.columns-1].cell;
 
-        const offset = { 
-            x: dimensions.right > this.renderSettings.pixelWidth ? this.renderSettings.pixelWidth - dimensions.right : 0,
-            y: dimensions.bottom > this.renderSettings.pixelHeight ? this.renderSettings.pixelHeight - dimensions.bottom : 0
+
+        const zeroOffset = { x: 0, y: 0};
+        const dynaZeroDimensions = new CellDimensions(this.renderSettings, zeroOffset, dynaCell);
+        const bottomRightZeroDimensions = new CellDimensions(this.renderSettings, zeroOffset, bottomRight);
+
+        const centerOffset = { 
+            x: this.renderSettings.viewPort.pixelWidth/2 - dynaZeroDimensions.left - dynaZeroDimensions.width/2,
+            y: this.renderSettings.viewPort.pixelHeight/2 - dynaZeroDimensions.top - dynaZeroDimensions.height/2
         };
+        const topLeftCenterDimensions = new CellDimensions(this.renderSettings, centerOffset, topLeft);
+        const bottomRightCenterDimensions = new CellDimensions(this.renderSettings, centerOffset, bottomRight);
 
-        return offset;
+        const boundedOffset = Object.assign({}, centerOffset);
+        if (topLeftCenterDimensions.left > 0) {
+            boundedOffset.x = 0;
+        }
+        if (topLeftCenterDimensions.top > 0) {
+            boundedOffset.y = 0;
+        }        
+        if (bottomRightCenterDimensions.right < this.renderSettings.viewPort.pixelWidth)  {
+            boundedOffset.x = this.renderSettings.viewPort.pixelWidth - bottomRightZeroDimensions.right;
+        }
+        if (bottomRightCenterDimensions.bottom < this.renderSettings.viewPort.pixelHeight) {
+            boundedOffset.y = this.renderSettings.viewPort.pixelHeight - bottomRightZeroDimensions.bottom;
+        }
+
+        return boundedOffset;
     }
 
     render() {
+        this.context.clearRect(0, 0, this.renderSettings.viewPort.pixelWidth, this.renderSettings.viewPort.pixelHeight);
         this.renderGrid();
     }
 
@@ -230,9 +254,13 @@ class Render {
 }
 
 interface RenderSettings {
-    pixelRatio: number;
+    viewPort: ViewPortSettings;
+}
+
+interface ViewPortSettings {
     pixelWidth: number;
     pixelHeight: number;
+    cellsPerWidth: number;
 }
 
 class CellDimensions {
@@ -250,7 +278,7 @@ class CellDimensions {
     bottom: number;
 
     constructor(private renderSettings: RenderSettings, private offset: PixelOffset, private cell: Cell) {
-        this.width = this.renderSettings.pixelWidth / this.renderSettings.pixelRatio;
+        this.width = this.renderSettings.viewPort.pixelWidth / this.renderSettings.viewPort.cellsPerWidth;
         this.height = this.width;
         this.topLeft = {
             x: cell.position.column * this.width + this.offset.x,
